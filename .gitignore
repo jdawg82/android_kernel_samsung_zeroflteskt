@@ -45,6 +45,7 @@ modules.builtin
 /Module.markers
 /Module.symvers
 /fips_fmp_utils
+/Image
 
 #
 # Debian directory (make deb-pkg)
