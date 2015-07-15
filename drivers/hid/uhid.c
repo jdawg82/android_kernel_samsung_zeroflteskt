@@ -123,15 +123,40 @@ static int uhid_hid_input(struct input_dev *input, unsigned int type,
 	struct uhid_device *uhid = hid->driver_data;
 	unsigned long flags;
 	struct uhid_event *ev;
+	struct hid_field *field;
+	struct hid_report *report;
+	int offset;
 
 	ev = kzalloc(sizeof(*ev), GFP_ATOMIC);
 	if (!ev)
 		return -ENOMEM;
 
-	ev->type = UHID_OUTPUT_EV;
-	ev->u.output_ev.type = type;
-	ev->u.output_ev.code = code;
-	ev->u.output_ev.value = value;
+	switch (type) {
+	case EV_LED:
+		offset = hidinput_find_field(hid, type, code, &field);
+		if (offset == -1) {
+			hid_warn(input, "event field not found\n");
+			kfree(ev);
+			return -1;
+		}
+
+		hid_set_field(field, offset, value);
+
+		report = field->report;
+
+		ev->type = UHID_OUTPUT;
+		ev->u.output.rtype = UHID_OUTPUT_REPORT;
+		hid_output_report(report, ev->u.output.data);
+		ev->u.output.size = ((report->size - 1) >> 3) + 1 +
+							(report->id > 0);
+		break;
+
+	default:
+		ev->type = UHID_OUTPUT_EV;
+		ev->u.output_ev.type = type;
+		ev->u.output_ev.code = code;
+		ev->u.output_ev.value = value;
+	}
 
 	spin_lock_irqsave(&uhid->qlock, flags);
 	uhid_queue(uhid, ev);
@@ -312,7 +337,7 @@ static int uhid_event_from_user(const char __user *buffer, size_t len,
 			 */
 			struct uhid_create_req_compat *compat;
 
-			compat = kmalloc(sizeof(*compat), GFP_KERNEL);
+			compat = kzalloc(sizeof(*compat), GFP_KERNEL);
 			if (!compat)
 				return -ENOMEM;
 
@@ -640,7 +665,7 @@ static const struct file_operations uhid_fops = {
 
 static struct miscdevice uhid_misc = {
 	.fops		= &uhid_fops,
-	.minor		= MISC_DYNAMIC_MINOR,
+	.minor		= UHID_MINOR,
 	.name		= UHID_NAME,
 };
 
@@ -659,3 +684,5 @@ module_exit(uhid_exit);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("David Herrmann <dh.herrmann@gmail.com>");
 MODULE_DESCRIPTION("User-space I/O driver support for HID subsystem");
+MODULE_ALIAS_MISCDEV(UHID_MINOR);
+MODULE_ALIAS("devname:" UHID_NAME);
